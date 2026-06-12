@@ -59,7 +59,7 @@ paths:
 
   /api/alerts:
     get:
-      summary: 获取告警历史列表 (前端已调用，待A实现)
+      summary: 获取告警历史列表 (已实现)
       parameters:
         - name: limit
           in: query
@@ -102,7 +102,7 @@ paths:
 
   /api/watering:
     post:
-      summary: 记录浇水事件 (前端已调用，待A实现)
+      summary: 记录浇水事件 (已实现)
       requestBody:
         required: true
         content:
@@ -134,11 +134,12 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/WateringRecord'
+  /api/watering/{id}:
     delete:
-      summary: 删除浇水记录
+      summary: 删除浇水记录 (已实现)
       parameters:
         - name: id
-          in: query
+          in: path
           required: true
           schema: { type: integer }
       responses:
@@ -180,6 +181,20 @@ paths:
         '200':
           description: 发送成功
 
+  /api/health:
+    get:
+      summary: 健康检查
+      responses:
+        '200':
+          description: 服务正常
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+                  time: { type: string, format: date-time }
+
 components:
   schemas:
     SensorReading:
@@ -199,6 +214,10 @@ components:
         max_moisture: { type: number }
         readings_count: { type: integer }
         period_hours: { type: integer }
+        latest_moisture: { type: number, nullable: true }
+        latest_voltage: { type: number, nullable: true }
+        latest_adc: { type: integer, nullable: true }
+        latest_time: { type: string, format: date-time, nullable: true }
 
     AlertConfig:
       type: object

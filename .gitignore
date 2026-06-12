@@ -1,25 +1,8 @@
-# Python
 __pycache__/
-*.py[cod]
-*.egg-info/
-dist/
-build/
-venv/
-.venv/
-
-# SQLite
+*.pyc
 *.db
-
-# IDE
-.vscode/
-.idea/
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Env
 .env
-
-# Logs
-*.log
+node_modules/
+dist/
+*.apk
+.DS_Store

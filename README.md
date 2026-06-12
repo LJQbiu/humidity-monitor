@@ -1,38 +1,27 @@
-# Humidity Monitor
+# humidity-monitor
 
-湿度传感器监控系统 - 前后端 monorepo
+湿度监控系统 — 土壤湿度传感器 + 后端API + 移动端App
 
 ## 结构
 
 ```
 humidity-monitor/
-  ├── backend/        # Flask + SQLite (Agent-A)
-  ├── frontend/       # Capacitor APK (Agent-B)
-  ├── contracts/      # API契约 (共享)
+  ├── backend/        Flask API (Python)
+  ├── frontend/       Capacitor App (Android APK)
+  ├── contracts/      API契约 (api_v1.yaml)
   └── README.md
 ```
 
-## 契约
+## 协作
 
-API契约定义在 `contracts/api_v1.yaml`
+- Agent-A (Linux): 后端 Flask API
+- Agent-B (Windows): 前端 Capacitor App
+- 通信: 通过 GenericAgent 的 collab.py
 
-## 接口
-
-| 接口 | 方法 | 说明 |
-|------|------|------|
-| /api/data | POST | 插入传感器数据 |
-| /api/history | GET | 查询历史数据 |
-| /api/stats | GET | 统计摘要 |
-| /api/alerts/config | PUT/GET | 告警配置读写 |
-| /api/push/register | POST | FCM令牌注册 |
-| /api/push/send | POST | 推送通知发送 |
-
-## 快速启动
+## 启动
 
 ```bash
 cd backend
 pip install -r requirements.txt
 python app.py
 ```
-
-后端默认运行在 `http://0.0.0.0:5000`

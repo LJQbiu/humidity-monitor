@@ -1,5 +1,5 @@
 """湿度传感器 Flask 后端 - Agent-A 实现
-按 collab/contracts/api_v1.yaml 契约实现6个API接口
+按 collab/contracts/api_v1.yaml 契约实现6+个API接口
 """
 import os
 import sqlite3
@@ -61,6 +61,24 @@ def init_db():
             created_at TEXT NOT NULL
         )
     """)
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS alert_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            type TEXT NOT NULL CHECK(type IN ('low','high')),
+            moisture REAL NOT NULL,
+            threshold REAL NOT NULL,
+            timestamp TEXT NOT NULL,
+            notified INTEGER DEFAULT 0
+        )
+    """)
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS watering_records (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            time TEXT NOT NULL,
+            moisture_before REAL,
+            moisture_after REAL
+        )
+    """)
     # 初始化默认告警配置
     row = db.execute("SELECT COUNT(*) FROM alert_config").fetchone()
     if row[0] == 0:
@@ -86,7 +104,31 @@ def post_data():
         (data['moisture'], data.get('adc'), data.get('voltage'), ts)
     )
     db.commit()
+
+    # 自动告警检测: 检查是否超出阈值
+    _check_and_trigger_alert(db, data['moisture'])
+
     return jsonify({"status": "ok"}), 200
+
+def _check_and_trigger_alert(db, moisture):
+    """检查湿度是否超出阈值，触发告警记录"""
+    row = db.execute("SELECT enabled, min_threshold, max_threshold FROM alert_config WHERE id=1").fetchone()
+    if not row or not row[0]:
+        return
+    min_t, max_t = row[1], row[2]
+    alert_type = None
+    if moisture < min_t:
+        alert_type = 'low'
+    elif moisture > max_t:
+        alert_type = 'high'
+    if alert_type:
+        threshold = min_t if alert_type == 'low' else max_t
+        ts = datetime.utcnow().isoformat() + 'Z'
+        db.execute(
+            "INSERT INTO alert_history (type, moisture, threshold, timestamp) VALUES (?, ?, ?, ?)",
+            (alert_type, moisture, threshold, ts)
+        )
+        db.commit()
 
 # ─── API 2: GET /api/history ───
 @app.route('/api/history', methods=['GET'])
@@ -117,12 +159,22 @@ def get_stats():
         FROM readings WHERE timestamp >= ?
     """, (since,)).fetchone()
     
+    # 获取最新一条数据
+    latest = db.execute(
+        "SELECT moisture, voltage, adc, timestamp FROM readings WHERE timestamp >= ? ORDER BY timestamp DESC LIMIT 1",
+        (since,)
+    ).fetchone()
+    
     return jsonify({
         "avg_moisture": round(row[0], 2) if row[0] else 0,
         "min_moisture": row[1] if row[1] else 0,
         "max_moisture": row[2] if row[2] else 0,
         "readings_count": row[3],
-        "period_hours": hours
+        "period_hours": hours,
+        "latest_moisture": latest[0] if latest else None,
+        "latest_voltage": latest[1] if latest else None,
+        "latest_adc": latest[2] if latest else None,
+        "latest_time": latest[3] if latest else None
     }), 200
 
 # ─── API 4: GET/PUT /api/alerts/config ───
@@ -194,8 +246,84 @@ def push_send():
     
     return jsonify({"status": "ok", "message": "push recorded (FCM integration pending)"}), 200
 
+# ═══════════════════════════════════════════════
+# 新增端点 (Agent-B请求)
+# ═══════════════════════════════════════════════
+
+# ─── API 7: GET /api/alerts (告警历史) ───
+@app.route('/api/alerts', methods=['GET'])
+def get_alerts():
+    """获取告警历史列表"""
+    limit = request.args.get('limit', 20, type=int)
+    db = get_db()
+    rows = db.execute(
+        "SELECT id, type, moisture, threshold, timestamp, notified FROM alert_history ORDER BY timestamp DESC LIMIT ?",
+        (limit,)
+    ).fetchall()
+    result = [{
+        "id": r[0],
+        "type": r[1],
+        "moisture": r[2],
+        "threshold": r[3],
+        "timestamp": r[4],
+        "notified": bool(r[5])
+    } for r in rows]
+    return jsonify(result), 200
+
+# ─── API 8: POST/GET/DELETE /api/watering (浇水记录) ───
+@app.route('/api/watering', methods=['POST'])
+def watering_create():
+    """记录浇水事件"""
+    data = request.get_json(force=True)
+    if not data:
+        return jsonify({"status": "error", "message": "request body required"}), 400
+    
+    ts = data.get('time', datetime.utcnow().isoformat() + 'Z')
+    db = get_db()
+    cursor = db.execute(
+        "INSERT INTO watering_records (time, moisture_before, moisture_after) VALUES (?, ?, ?)",
+        (ts, data.get('moisture_before'), data.get('moisture_after'))
+    )
+    db.commit()
+    return jsonify({"id": cursor.lastrowid, "status": "ok"}), 200
+
+@app.route('/api/watering', methods=['GET'])
+def watering_list():
+    """获取浇水历史"""
+    limit = request.args.get('limit', 50, type=int)
+    db = get_db()
+    rows = db.execute(
+        "SELECT id, time, moisture_before, moisture_after FROM watering_records ORDER BY time DESC LIMIT ?",
+        (limit,)
+    ).fetchall()
+    result = [{
+        "id": r[0],
+        "time": r[1],
+        "moisture_before": r[2],
+        "moisture_after": r[3]
+    } for r in rows]
+    return jsonify(result), 200
+
+@app.route('/api/watering', methods=['DELETE'])
+def watering_delete():
+    """删除浇水记录"""
+    record_id = request.args.get('id', type=int)
+    if not record_id:
+        return jsonify({"status": "error", "message": "id query parameter required"}), 400
+    
+    db = get_db()
+    db.execute("DELETE FROM watering_records WHERE id=?", (record_id,))
+    db.commit()
+    return jsonify({"status": "ok"}), 200
+
+# ─── 健康检查 ───
+@app.route('/api/health', methods=['GET'])
+def health():
+    return jsonify({"status": "ok", "time": datetime.utcnow().isoformat() + 'Z'}), 200
+
 # ─── 启动 ───
 if __name__ == '__main__':
     init_db()
     port = int(os.environ.get('HUMIDITY_PORT', 5000))
+    print(f"🌱 Humidity Sensor Backend starting on 0.0.0.0:{port}")
     app.run(host='0.0.0.0', port=port, debug=True)
