@@ -77,12 +77,17 @@
         ❌ {{ errorMsg }}
       </div>
     </main>
+    <!-- 离线提示 -->
+    <div class="offline-bar" v-if="!isOnline">
+      📡 网络断开 — 数据可能过时
+    </div>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import api from './api'
+import { initCapacitorPlugins, getServerUrl, setServerUrl, getNetworkStatus } from './plugins/capacitor'
 
 const stats = ref(null)
 const waterings = ref([])
@@ -90,6 +95,8 @@ const alerts = ref([])
 const alertConfig = ref(null)
 const loading = ref(false)
 const errorMsg = ref('')
+const isOnline = ref(true)
+const serverUrl = ref('/api')
 let refreshTimer = null
 
 async function fetchData() {
@@ -148,7 +155,25 @@ function formatTime(ts) {
   return d.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
 }
 
-onMounted(() => {
+onMounted(async () => {
+  // 初始化Capacitor插件
+  try {
+    serverUrl.value = await getServerUrl()
+    const { networkStatus: ns } = await initCapacitorPlugins({
+      onNetworkChange: (status) => { isOnline.value = status.connected },
+      onPushNotification: (notification) => {
+        // 推送到达时刷新数据
+        fetchData()
+      },
+      onBackButton: () => {
+        // Android返回键：不做退出，仅提示
+        errorMsg.value = '再按一次退出'
+      }
+    })
+    isOnline.value = ns.connected
+  } catch (e) {
+    console.warn('Capacitor plugins init skipped (web env):', e.message)
+  }
   fetchData()
   refreshTimer = setInterval(fetchData, 30000)
 })
@@ -306,5 +331,18 @@ body {
   color: var(--red);
   font-size: 0.85rem;
   text-align: center;
+}
+
+.offline-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 8px;
+  background: #ff9800;
+  color: white;
+  text-align: center;
+  font-size: 0.85rem;
+  z-index: 100;
 }
 </style>
