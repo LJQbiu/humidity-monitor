@@ -86,7 +86,7 @@
 
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
-import api from './api'
+import { getStats, getWatering, getAlerts, getAlertConfig, postWatering, deleteWatering as apiDeleteWatering, updateAlertConfig } from './api'
 import { initCapacitorPlugins, getServerUrl, setServerUrl, getNetworkStatus } from './plugins/capacitor'
 
 const stats = ref(null)
@@ -103,17 +103,17 @@ async function fetchData() {
   try {
     errorMsg.value = ''
     const [s, w, a, ac] = await Promise.all([
-      api.get('/stats'),
-      api.get('/watering'),
-      api.get('/alerts'),
-      api.get('/alerts/config')
+      getStats(),
+      getWatering(),
+      getAlerts(),
+      getAlertConfig()
     ])
-    stats.value = s.data
-    waterings.value = w.data
-    alerts.value = a.data
-    alertConfig.value = ac.data
+    stats.value = s
+    waterings.value = w
+    alerts.value = a
+    alertConfig.value = ac
   } catch (e) {
-    errorMsg.value = e.response?.data?.error || e.message || '连接失败'
+    errorMsg.value = e.message || '连接失败'
   }
 }
 
@@ -121,17 +121,17 @@ async function recordWatering() {
   loading.value = true
   try {
     const moisture = stats.value?.latest_moisture ?? 0
-    await api.post('/watering', { moisture_before: moisture })
+    await postWatering({ moisture_before: moisture })
     await fetchData()
   } catch (e) {
-    errorMsg.value = '记录失败: ' + (e.response?.data?.error || e.message)
+    errorMsg.value = '记录失败: ' + e.message
   }
   loading.value = false
 }
 
 async function deleteWatering(id) {
   try {
-    await api.delete(`/watering/${id}`)
+    await apiDeleteWatering(id)
     await fetchData()
   } catch (e) {
     errorMsg.value = '删除失败'
@@ -141,7 +141,7 @@ async function deleteWatering(id) {
 async function saveAlertConfig() {
   loading.value = true
   try {
-    await api.put('/alerts/config', alertConfig.value)
+    await updateAlertConfig(alertConfig.value)
     await fetchData()
   } catch (e) {
     errorMsg.value = '保存失败'
