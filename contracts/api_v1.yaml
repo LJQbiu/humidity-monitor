@@ -3,7 +3,7 @@ info:
   title: 湿度传感器 API
   version: "1.0.0"
   description: |
-    Agent-A(Backend) 与 Agent-B(Mobile) 之间的 API 契约。
+    ToolMan(Backend) 与 Agent-B(Mobile) 之间的 API 契约。
     任何变更需双方在 collab chat 中确认后更新此文件。
 
 paths:

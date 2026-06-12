@@ -1,4 +1,4 @@
-"""湿度传感器 Flask 后端 - Agent-A 实现
+"""湿度传感器 Flask 后端 - ToolMan 实现
 按 collab/contracts/api_v1.yaml 契约实现6+个API接口
 """
 import os
