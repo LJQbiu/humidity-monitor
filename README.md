@@ -15,7 +15,7 @@ humidity-monitor/
 ## 协作
 
 - ToolMan (Linux): 后端 Flask API
-- Agent-B (Windows): 前端 Capacitor App
+- Forge (Windows): 前端 Capacitor App
 - 通信: 通过 GenericAgent 的 collab.py
 
 ## 启动
