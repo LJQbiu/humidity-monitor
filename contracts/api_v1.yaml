@@ -1,0 +1,231 @@
+openapi: "3.0.3"
+info:
+  title: 湿度传感器 API
+  version: "1.0.0"
+  description: |
+    Agent-A(Backend) 与 Agent-B(Mobile) 之间的 API 契约。
+    任何变更需双方在 collab chat 中确认后更新此文件。
+
+paths:
+  /api/data:
+    post:
+      summary: 提交传感器数据
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SensorReading'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+
+  /api/history:
+    get:
+      summary: 获取历史数据
+      parameters:
+        - name: hours
+          in: query
+          schema: { type: integer, default: 24 }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 100 }
+      responses:
+        '200':
+          description: 历史数据列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SensorReading'
+
+  /api/stats:
+    get:
+      summary: 获取统计数据
+      responses:
+        '200':
+          description: 统计摘要
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatsSummary'
+
+  /api/alerts:
+    get:
+      summary: 获取告警历史列表 (前端已调用，待A实现)
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20 }
+      responses:
+        '200':
+          description: 告警记录列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AlertRecord'
+
+  /api/alerts/config:
+    get:
+      summary: 获取告警配置
+      responses:
+        '200':
+          description: 告警配置
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlertConfig'
+    put:
+      summary: 更新告警配置
+      responses:
+        '200':
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlertConfig'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AlertConfig'
+
+  /api/watering:
+    post:
+      summary: 记录浇水事件 (前端已调用，待A实现)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WateringRecord'
+      responses:
+        '200':
+          description: 记录成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: integer }
+                  status: { type: string }
+    get:
+      summary: 获取浇水历史
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 50 }
+      responses:
+        '200':
+          description: 浇水记录列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/WateringRecord'
+    delete:
+      summary: 删除浇水记录
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: 删除成功
+
+  /api/push/register:
+    post:
+      summary: 注册设备推送令牌 (App端调用)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                token: { type: string, description: "FCM设备令牌" }
+                platform: { type: string, enum: [android, ios] }
+      responses:
+        '200':
+          description: 注册成功
+
+  /api/push/send:
+    post:
+      summary: 发送推送通知 (后端告警触发调用)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_token, title, body]
+              properties:
+                user_token: { type: string, description: "目标用户FCM令牌" }
+                title: { type: string, description: "推送标题" }
+                body: { type: string, description: "推送内容" }
+                data: { type: object, description: "附加数据(可选)" }
+      responses:
+        '200':
+          description: 发送成功
+
+components:
+  schemas:
+    SensorReading:
+      type: object
+      required: [moisture, timestamp]
+      properties:
+        moisture: { type: number, description: "土壤湿度 0-100%" }
+        adc: { type: integer, description: "ADC原始值" }
+        voltage: { type: number, description: "电压值" }
+        timestamp: { type: string, format: date-time, description: "ISO8601" }
+
+    StatsSummary:
+      type: object
+      properties:
+        avg_moisture: { type: number }
+        min_moisture: { type: number }
+        max_moisture: { type: number }
+        readings_count: { type: integer }
+        period_hours: { type: integer }
+
+    AlertConfig:
+      type: object
+      properties:
+        enabled: { type: boolean }
+        low_threshold: { type: number, description: "低于此值触发告警(前端字段名)" }
+        high_threshold: { type: number }
+        min_threshold: { type: number, description: "低于此值触发告警(后端字段名)" }
+        max_threshold: { type: number }
+        webhook_url: { type: string }
+        push_enabled: { type: boolean, default: false }
+
+    AlertRecord:
+      type: object
+      properties:
+        id: { type: integer }
+        type: { type: string, enum: [low, high], description: "告警类型" }
+        moisture: { type: number, description: "触发时湿度值" }
+        threshold: { type: number, description: "阈值" }
+        timestamp: { type: string, format: date-time }
+        notified: { type: boolean, description: "是否已推送通知" }
+
+    WateringRecord:
+      type: object
+      properties:
+        id: { type: integer }
+        time: { type: string, format: date-time, description: "浇水时间" }
+        moisture_before: { type: number, description: "浇水前湿度" }
+        moisture_after: { type: number, description: "浇水后湿度(可选)" }
+
