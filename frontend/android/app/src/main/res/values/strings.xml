@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">湿度监控</string>
+    <string name="title_activity_main">湿度监控</string>
+    <string name="package_name">com.ljqbiu.humiditymonitor</string>
+    <string name="custom_url_scheme">com.ljqbiu.humiditymonitor</string>
+</resources>

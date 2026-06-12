@@ -6,3 +6,7 @@ node_modules/
 dist/
 *.apk
 .DS_Store
+frontend/node_modules/
+frontend/dist/
+android/app/build/
+android/.gradle/
