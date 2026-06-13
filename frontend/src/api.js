@@ -1,10 +1,32 @@
 import axios from 'axios'
+import { getServerUrl } from './plugins/capacitor.js'
+
+// 动态获取baseURL：浏览器开发时用'/api'(vite proxy)，APK里用完整服务器地址
+let _baseUrl = '/api'  // 默认值（浏览器+vite proxy可用）
 
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: _baseUrl,
   timeout: 10000,
   headers: { 'Content-Type': 'application/json' }
 })
+
+/** 初始化时调用，从Preferences/localStorage读取服务器地址并更新baseURL */
+export async function initApiBaseUrl() {
+  const url = await getServerUrl()
+  if (url && url !== '/api') {
+    api.defaults.baseURL = url
+    _baseUrl = url
+  }
+  console.log('[API] baseURL set to:', api.defaults.baseURL)
+  return api.defaults.baseURL
+}
+
+/** 修改服务器地址（配置界面用） */
+export async function updateApiBaseUrl(newUrl) {
+  api.defaults.baseURL = newUrl
+  _baseUrl = newUrl
+  console.log('[API] baseURL updated to:', newUrl)
+}
 
 // ========== 传感器数据 ==========
 

@@ -37,7 +37,7 @@ export function getNetworkStatus() {
 
 // ========== Preferences 服务器地址配置 ==========
 const SERVER_URL_KEY = 'server_url'
-const DEFAULT_SERVER_URL = '/api'
+const DEFAULT_SERVER_URL = 'http://192.168.199.233:5000/api'
 
 export async function getServerUrl() {
   try {
@@ -66,6 +66,11 @@ export async function clearServerUrl() {
 
 // ========== Push Notifications ==========
 export async function initPush(onNotification) {
+  // TODO: Firebase未配置(缺google-services.json)，暂跳过Push注册避免原生层崩溃
+  // 配置Firebase后再启用: 需google-services.json + com.google.gms.google-services插件
+  console.warn('Push notifications skipped: Firebase not configured (missing google-services.json)')
+  return
+  /* 原始代码，Firebase配置后恢复:
   try {
     const permResult = await PushNotifications.requestPermissions()
     if (permResult.receive !== 'granted') {
@@ -95,6 +100,7 @@ export async function initPush(onNotification) {
   } catch (e) {
     console.warn('Push notifications not available (web environment)')
   }
+  */
 }
 
 // ========== App 生命周期 ==========

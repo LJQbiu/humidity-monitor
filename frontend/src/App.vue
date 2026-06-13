@@ -9,6 +9,9 @@
         <button class="icon-btn" @click="fetchData" :disabled="loading" title="刷新">
           🔄
         </button>
+        <button class="icon-btn" @click="showServerConfig = true" title="服务器设置">
+          ⚙️
+        </button>
       </div>
     </header>
 
@@ -120,12 +123,25 @@
     <div class="offline-bar" v-if="!isOnline">
       📡 网络断开 — 数据可能过时
     </div>
+
+    <!-- 服务器配置模态框 -->
+    <div class="modal-overlay" v-if="showServerConfig" @click.self="showServerConfig = false">
+      <div class="modal-card">
+        <h2>⚙️ 服务器设置</h2>
+        <p class="modal-hint">当前地址：{{ currentServerUrl }}</p>
+        <input class="modal-input" v-model="serverUrlInput" placeholder="http://192.168.x.x:5000/api" />
+        <div class="modal-actions">
+          <button class="modal-btn save" @click="saveServerConfig">保存并连接</button>
+          <button class="modal-btn cancel" @click="showServerConfig = false">取消</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { getStats, getWatering, getAlerts, getAlertConfig, getHistory, postWatering, deleteWatering as apiDeleteWatering, updateAlertConfig } from './api'
+import { getStats, getWatering, getAlerts, getAlertConfig, getHistory, postWatering, deleteWatering as apiDeleteWatering, updateAlertConfig, initApiBaseUrl, updateApiBaseUrl } from './api'
 import { initCapacitorPlugins, getServerUrl, setServerUrl, getNetworkStatus } from './plugins/capacitor'
 
 // ========== 状态 ==========
@@ -140,7 +156,9 @@ const isOnline = ref(true)
 const isDark = ref(false)
 const historyRange = ref(24)
 const lastRefresh = ref(null)
-const serverUrl = ref('')
+const currentServerUrl = ref('')
+const showServerConfig = ref(false)
+const serverUrlInput = ref('')
 let refreshTimer = null
 
 // ========== 计算属性 ==========
@@ -270,6 +288,23 @@ async function saveAlertConfig() {
   loading.value = false
 }
 
+async function saveServerConfig() {
+  const newUrl = serverUrlInput.value.trim()
+  if (!newUrl) return
+  loading.value = true
+  try {
+    await setServerUrl(newUrl)
+    await updateApiBaseUrl(newUrl)
+    currentServerUrl.value = newUrl
+    showServerConfig.value = false
+    await fetchData()
+    await fetchHistory()
+  } catch (e) {
+    errorMsg.value = '连接失败: ' + e.message
+  }
+  loading.value = false
+}
+
 function clearAlerts() {
   alerts.value = []
 }
@@ -301,9 +336,10 @@ onMounted(async () => {
     if (saved === 'true') isDark.value = true
   } catch {}
 
-  // Capacitor插件初始化
+  // Capacitor插件初始化 + API baseURL动态设置
   try {
-    serverUrl.value = await getServerUrl()
+    currentServerUrl.value = await getServerUrl()
+    serverUrlInput.value = currentServerUrl.value
     const { networkStatus: ns } = await initCapacitorPlugins({
       onNetworkChange: (status) => { isOnline.value = status.connected },
       onPushNotification: () => { fetchData() },
@@ -312,6 +348,13 @@ onMounted(async () => {
     isOnline.value = ns.connected
   } catch (e) {
     console.warn('Capacitor plugins init skipped (web env):', e.message)
+  }
+
+  // 设置API baseURL（关键！APK里不用vite proxy）
+  try {
+    await initApiBaseUrl()
+  } catch (e) {
+    console.warn('initApiBaseUrl failed:', e.message)
   }
 
   fetchData()
@@ -620,6 +663,48 @@ body {
   font-size: 0.85rem;
   z-index: 100;
 }
+
+/* 模态框 */
+.modal-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+}
+.modal-card {
+  background: var(--card-bg);
+  border-radius: 16px;
+  padding: 24px;
+  width: 90%;
+  max-width: 360px;
+  box-shadow: 0 4px 16px var(--shadow);
+}
+.modal-card h2 { color: var(--text); margin-bottom: 12px; }
+.modal-hint { font-size: 0.8rem; color: var(--text2); margin-bottom: 12px; word-break: break-all; }
+.modal-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  margin-bottom: 16px;
+  background: var(--bg);
+  color: var(--text);
+}
+.modal-actions { display: flex; gap: 8px; }
+.modal-btn {
+  flex: 1;
+  padding: 10px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+.modal-btn.save { background: var(--green); color: white; }
+.modal-btn.cancel { background: #eee; color: var(--text); }
 
 /* 响应式 */
 @media (max-width: 360px) {
