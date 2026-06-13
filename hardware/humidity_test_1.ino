@@ -3,6 +3,7 @@
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
+#include "fairy_bitmaps.h"
 
 // ========== OLED 配置 ==========
 #define SCREEN_WIDTH 128
@@ -102,63 +103,57 @@ void showWiFiFailed() {
 void showData() {
   display.clearDisplay();
   
-  // === 顶部状态栏 (y=0~8) - 全用文字，不用像素绘图 ===
+  // === 顶部状态栏 (y=0~8) ===
   display.setTextSize(1);
   bool wifiOn = (WiFi.status() == WL_CONNECTED);
   
-  // WiFi状态文字
   display.setCursor(0, 0);
-  if (wifiOn) {
-    display.print("WiFi");
-  } else {
-    display.print("AP");
-  }
+  if (wifiOn) display.print("WiFi");
+  else display.print("AP");
   
-  // 上传状态文字
   display.setCursor(28, 0);
   if (hasUpload) {
-    if (uploadOk) {
-      display.print("ok");
-    } else {
-      display.print("x");
-    }
+    if (uploadOk) display.print("ok");
+    else display.print("x");
   } else {
     display.print("--");
   }
   
-  // 右侧湿度等级
-  display.setCursor(104, 0);
+  // 湿度等级(左半区域)
+  display.setCursor(70, 0);
   display.print(getMoistureLabel());
   
-  // 分隔线
-  display.drawFastHLine(0, 10, 128, SSD1306_WHITE);
+  // 分隔线(只画左半，右侧留给花仙子)
+  display.drawFastHLine(0, 10, 100, SSD1306_WHITE);
   
-  // === 中央大号湿度 - 居左显示 ===
+  // === 花仙子 (右侧 x=102, y=12, 24x32) ===
+  const uint8_t* fairy = getFairyBitmap(moisture);
+  display.drawBitmap(102, 12, fairy, FAIRY_WIDTH, FAIRY_HEIGHT, SSD1306_WHITE);
+  
+  // === 中央大号湿度 (左侧) ===
   int mVal = (int)moisture;
   display.setTextSize(3);
-  display.setCursor(2, 14);   // 从左边开始，不再右对齐
+  display.setCursor(2, 14);
   display.print(mVal);
   
-  // %号紧跟数字后面，用size2
+  // %号紧跟数字
   display.setTextSize(2);
-  // size3每个字符宽18px，根据位数算%位置
   int pctX;
-  if (mVal < 10) pctX = 2 + 18;      // 1位数字后
-  else if (mVal < 100) pctX = 2 + 36; // 2位数字后
-  else pctX = 2 + 54;                 // 3位数字后
+  if (mVal < 10) pctX = 2 + 18;
+  else if (mVal < 100) pctX = 2 + 36;
+  else pctX = 2 + 54;
   display.setCursor(pctX, 20);
   display.print("%");
   
-  // === 进度条 (y=40~49) ===
-  int barY = 40;
-  int barH = 10;
-  int barW = 124;
+  // === 进度条 (y=44~51, 左半) ===
+  int barY = 44;
+  int barH = 8;
+  int barW = 100;
   display.drawRect(2, barY, barW, barH, SSD1306_WHITE);
   
   int fillW = (int)(barW * moisture / 100.0);
   if (fillW > 2) {
     display.fillRect(4, barY + 2, fillW - 3, barH - 4, SSD1306_WHITE);
-    // 高湿度条纹效果
     if (moisture > 70) {
       for (int i = 4; i < fillW; i += 4) {
         display.drawFastVLine(i, barY + 2, barH - 4, SSD1306_BLACK);
@@ -166,22 +161,21 @@ void showData() {
     }
   }
   
-  // 刻度：只在bar内部画3条细竖线(25%/50%/75%)，不画外部文字
+  // 刻度: 25%/50%/75%
   for (int mark = 25; mark <= 75; mark += 25) {
     int mx = 2 + barW * mark / 100;
-    // 细竖线在bar内部，高3px居中
-    display.drawFastVLine(mx, barY + 3, 4, SSD1306_BLACK);
+    display.drawFastVLine(mx, barY + 2, 4, SSD1306_BLACK);
   }
   
-  // === 底部信息行 (y=54~63) - 进度条下方有5px间距，不会重叠 ===
+  // === 底部信息行 (y=56~63, 左半) ===
   display.setTextSize(1);
-  display.setCursor(0, 54);
+  display.setCursor(0, 56);
   display.print("ADC:");
   display.print(adc_raw);
-  display.setCursor(48, 54);
+  display.setCursor(40, 56);
   display.print(voltage, 2);
   display.print("V");
-  display.setCursor(100, 54);
+  display.setCursor(76, 56);
   display.print(wifiOn ? "STA" : "AP");
   
   display.display();
