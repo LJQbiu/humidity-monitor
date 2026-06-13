@@ -5,8 +5,10 @@ import os
 import sqlite3
 from datetime import datetime, timedelta
 from flask import Flask, request, jsonify, g
+from flask_cors import CORS
 
 app = Flask(__name__)
+CORS(app, origins=['*'])
 
 # 配置
 DB_PATH = os.environ.get('HUMIDITY_DB', os.path.join(os.path.dirname(__file__), 'humidity.db'))

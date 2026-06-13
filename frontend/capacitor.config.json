@@ -3,6 +3,6 @@
   "appName": "湿度监控",
   "webDir": "dist",
   "server": {
-    "androidScheme": "https"
+    "androidScheme": "http"
   }
 }
