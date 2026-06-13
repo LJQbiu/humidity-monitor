@@ -37,7 +37,7 @@ export function getNetworkStatus() {
 
 // ========== Preferences 服务器地址配置 ==========
 const SERVER_URL_KEY = 'server_url'
-const DEFAULT_SERVER_URL = 'http://192.168.199.233:5000/api'
+const DEFAULT_SERVER_URL = 'http://101.37.19.59:5000/api'
 
 export async function getServerUrl() {
   try {

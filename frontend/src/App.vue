@@ -77,7 +77,7 @@
         </button>
         <div class="watering-list" v-if="waterings.length">
           <div class="watering-item" v-for="w in waterings" :key="w.id">
-            <span>{{ formatTime(w.time) }} — {{ w.moisture_before }}%</span>
+            <span>{{ formatTime(w.time) }} — {{ w.moisture_before ?? '未知' }}{{ w.moisture_before != null ? '%' : '' }}{{ w.moisture_after != null ? ' → '+w.moisture_after+'%' : '' }}</span>
             <button class="del-btn" @click="deleteWatering(w.id)">✕</button>
           </div>
         </div>
