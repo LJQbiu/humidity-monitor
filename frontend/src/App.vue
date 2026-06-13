@@ -448,7 +448,7 @@ body {
 
 .moisture-ring {
   display: inline-flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: center;
   width: 120px;
   height: 120px;
