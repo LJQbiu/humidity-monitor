@@ -10,3 +10,6 @@ frontend/node_modules/
 frontend/dist/
 android/app/build/
 android/.gradle/
+
+hardware/build/
+hardware/humidity_test_1/humidity_test_1/

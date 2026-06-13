@@ -27,11 +27,15 @@ float dry_v = 2.5, wet_v = 1.0;
 bool uploadOk = false;
 bool hasUpload = false;
 
+// ========== 动画系统 ==========
+unsigned long lastFrameTime = 0;
+int animFrame = 0;       // 0=base, 1=blink, 2=wing flap
+const unsigned long FRAME_INTERVAL = 3000;  // 3秒切换帧
+
 // ========== OLED 显示函数 ==========
 
-// 获取湿度状态文字
 const char* getMoistureLabel() {
-  if (moisture < 20) return "DRY";
+  if (moisture < 20) return "DRY!";
   if (moisture < 40) return "Low";
   if (moisture < 60) return "OK";
   if (moisture < 80) return "Wet";
@@ -40,48 +44,50 @@ const char* getMoistureLabel() {
 
 void showBootScreen() {
   display.clearDisplay();
-  // 花仙子居中显示
   display.drawBitmap(52, 8, fairy_happy, FAIRY_WIDTH, FAIRY_HEIGHT, SSD1306_WHITE);
   display.setTextSize(1);
-  display.setCursor(10, 50);
-  display.print("Soil Sensor v1.0");
+  display.setCursor(10, 46);
+  display.print("Soil Fairy v2.0");
   // 小花装饰
-  display.drawPixel(46, 44, SSD1306_WHITE);
-  display.drawPixel(80, 44, SSD1306_WHITE);
+  display.drawPixel(46, 42, SSD1306_WHITE);
+  display.drawPixel(80, 42, SSD1306_WHITE);
+  display.drawPixel(60, 44, SSD1306_WHITE);
   display.display();
 }
 
 void showWiFiConnecting(int dots) {
   display.clearDisplay();
-  // 小花仙子在等待
-  display.drawBitmap(4, 8, fairy_happy, FAIRY_WIDTH, FAIRY_HEIGHT, SSD1306_WHITE);
+  display.drawBitmap(4, 8, fairy_normal, FAIRY_WIDTH, FAIRY_HEIGHT, SSD1306_WHITE);
   display.setTextSize(1);
   display.setCursor(36, 8);
   display.print("WiFi...");
-  // 动态点
   display.setCursor(36, 22);
   for (int i = 0; i < (dots % 5); i++) {
     display.print(".");
   }
+  // 等待动画提示
+  display.setCursor(36, 36);
+  display.print("Connecting");
   display.display();
 }
 
 void showWiFiConnected() {
   display.clearDisplay();
-  // 花仙子开心！WiFi连上了
   display.drawBitmap(4, 8, fairy_happy, FAIRY_WIDTH, FAIRY_HEIGHT, SSD1306_WHITE);
   display.setTextSize(1);
   display.setCursor(36, 8);
   display.print("WiFi OK!");
   display.setCursor(36, 22);
   display.print(WiFi.localIP());
+  // 小花庆祝
+  display.drawPixel(32, 40, SSD1306_WHITE);
+  display.drawPixel(36, 42, SSD1306_WHITE);
   display.display();
-  delay(1000);
+  delay(1500);
 }
 
 void showWiFiFailed() {
   display.clearDisplay();
-  // 花仙子有点伤心
   display.drawBitmap(4, 8, fairy_sad, FAIRY_WIDTH, FAIRY_HEIGHT, SSD1306_WHITE);
   display.setTextSize(1);
   display.setCursor(36, 8);
@@ -89,50 +95,82 @@ void showWiFiFailed() {
   display.setCursor(36, 22);
   display.print("192.168.4.1");
   display.display();
-  delay(1000);
+  delay(1500);
 }
 
-// ========== 主界面（花仙子为主角）==========
+// ========== 主界面：花仙子 + 湿度 + WiFi ==========
 void showData() {
   display.clearDisplay();
   
-  // === 花仙子 - 主角！(左侧 x=4, y=4, 24x32) ===
-  const uint8_t* fairy = getFairyBitmap(moisture);
-  display.drawBitmap(4, 4, fairy, FAIRY_WIDTH, FAIRY_HEIGHT, SSD1306_WHITE);
+  // === 动画帧更新 ===
+  unsigned long now = millis();
+  if (now - lastFrameTime >= FRAME_INTERVAL) {
+    animFrame = (animFrame + 1) % 3;  // 0→1→2→0 循环
+    lastFrameTime = now;
+  }
+  
+  // === 花仙子状态 + 动画帧 ===
+  FairyState state = getFairyState(moisture);
+  const uint8_t* fairy = getFairyFrame(state, animFrame);
+  display.drawBitmap(2, 4, fairy, FAIRY_WIDTH, FAIRY_HEIGHT, SSD1306_WHITE);
+  
+  // === 小花装饰（花仙子脚下）===
+  display.drawPixel(6, 40, SSD1306_WHITE);
+  display.drawPixel(18, 40, SSD1306_WHITE);
+  display.drawPixel(12, 42, SSD1306_WHITE);
+  display.drawPixel(8, 44, SSD1306_WHITE);
+  display.drawPixel(16, 44, SSD1306_WHITE);
   
   // === 湿度大字 (右侧) ===
   int mVal = (int)moisture;
   display.setTextSize(3);
-  display.setCursor(38, 6);
+  display.setCursor(38, 2);
   display.print(mVal);
   
-  // %号
+  // %号 (紧跟数字后面)
   display.setTextSize(2);
   int pctX;
   if (mVal < 10) pctX = 38 + 18;
   else if (mVal < 100) pctX = 38 + 36;
   else pctX = 38 + 54;
-  display.setCursor(pctX, 12);
+  display.setCursor(pctX, 8);
   display.print("%");
   
   // === 湿度标签 ===
   display.setTextSize(1);
-  display.setCursor(38, 34);
+  display.setCursor(38, 28);
   display.print(getMoistureLabel());
   
-  // === 小花装饰（花仙子脚下）===
-  display.drawPixel(8, 40, SSD1306_WHITE);
-  display.drawPixel(20, 40, SSD1306_WHITE);
-  display.drawPixel(14, 42, SSD1306_WHITE);
-  display.drawPixel(10, 44, SSD1306_WHITE);
-  display.drawPixel(18, 44, SSD1306_WHITE);
+  // === 电压 + ADC ===
+  display.setCursor(38, 38);
+  display.print("V:");
+  display.print(voltage, 1);
+  display.print("V");
+  display.setCursor(80, 38);
+  display.print("A:");
+  display.print(adc_raw);
   
-  // === WiFi指示（右下角小点）===
+  // === WiFi IP (右下) ===
   bool wifiOn = (WiFi.status() == WL_CONNECTED);
   if (wifiOn) {
-    display.fillCircle(122, 58, 3, SSD1306_WHITE);  // WiFi在线：实心圆
+    display.setTextSize(1);
+    display.setCursor(2, 52);
+    display.print(WiFi.localIP());
   } else {
-    display.drawCircle(122, 58, 3, SSD1306_WHITE);  // WiFi离线：空心圆
+    display.setTextSize(1);
+    display.setCursor(2, 52);
+    display.print("WiFi OFF");
+  }
+  
+  // === 上传状态指示 (右下角) ===
+  if (hasUpload) {
+    if (uploadOk) {
+      display.fillCircle(122, 58, 3, SSD1306_WHITE);  // 上传成功：实心圆
+    } else {
+      display.drawCircle(122, 58, 3, SSD1306_WHITE);  // 上传失败：空心圆
+    }
+  } else {
+    display.drawPixel(122, 58, SSD1306_WHITE);  // 未上传：小点
   }
   
   display.display();
@@ -156,12 +194,13 @@ void uploadData() {
   
   WiFiClient client;
   HTTPClient http;
+  http.begin(client, serverUrl);
   http.setTimeout(10000);
   http.addHeader("Content-Type", "application/json");
   
   String payload = "{\"adc\":" + String(adc_raw) + 
-                   ",\"voltage\":" + String(voltage) + 
-                   ",\"moisture\":" + String(moisture) + "}";
+                   ",\"voltage\":" + String(voltage, 2) + 
+                   ",\"moisture\":" + String(moisture, 1) + "}";
   
   int httpCode = http.POST(payload);
   
@@ -172,8 +211,6 @@ void uploadData() {
 }
 
 void setup() {
-  Serial.begin(115200);
-  
   Wire.begin(4, 5);  // SDA=GPIO4, SCL=GPIO5
   
   if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
@@ -199,12 +236,13 @@ void setup() {
     WiFi.softAP("SoilSensor", "12345678");
   }
   
-  delay(2000);
+  lastFrameTime = millis();
+  animFrame = 0;
 }
 
 void loop() {
   readSensor();
   uploadData();
   showData();
-  delay(5000);
+  delay(2000);
 }
