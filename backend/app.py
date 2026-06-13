@@ -180,11 +180,13 @@ def get_stats():
 # ─── API 4: GET/PUT /api/alerts/config ───
 @app.route('/api/alerts/config', methods=['GET'])
 def get_alert_config():
-    """获取告警配置"""
+    """获取告警配置（返回前端使用的字段名 low_threshold/high_threshold）"""
     db = get_db()
     row = db.execute("SELECT enabled, min_threshold, max_threshold, webhook_url, push_enabled FROM alert_config WHERE id=1").fetchone()
     return jsonify({
         "enabled": bool(row[0]),
+        "low_threshold": row[1],
+        "high_threshold": row[2],
         "min_threshold": row[1],
         "max_threshold": row[2],
         "webhook_url": row[3],
@@ -193,22 +195,37 @@ def get_alert_config():
 
 @app.route('/api/alerts/config', methods=['PUT'])
 def update_alert_config():
-    """更新告警配置"""
+    """更新告警配置（同时支持前端字段名 low/high 和后端字段名 min/max）"""
     data = request.get_json(force=True)
     db = get_db()
+    
+    # 兼容前端字段名和后端字段名
+    min_val = data.get('min_threshold') or data.get('low_threshold')
+    max_val = data.get('max_threshold') or data.get('high_threshold')
+    
     db.execute("""
         UPDATE alert_config SET
             enabled = ?, min_threshold = ?, max_threshold = ?, webhook_url = ?, push_enabled = ?
         WHERE id = 1
     """, (
         int(data.get('enabled', True)),
-        data.get('min_threshold', 30.0),
-        data.get('max_threshold', 80.0),
+        min_val if min_val is not None else 30.0,
+        max_val if max_val is not None else 80.0,
         data.get('webhook_url', ''),
         int(data.get('push_enabled', False))
     ))
     db.commit()
-    return jsonify(data), 200
+    # 返回时用前端字段名
+    row = db.execute("SELECT enabled, min_threshold, max_threshold, webhook_url, push_enabled FROM alert_config WHERE id=1").fetchone()
+    return jsonify({
+        "enabled": bool(row[0]),
+        "low_threshold": row[1],
+        "high_threshold": row[2],
+        "min_threshold": row[1],
+        "max_threshold": row[2],
+        "webhook_url": row[3],
+        "push_enabled": bool(row[4])
+    }), 200
 
 # ─── API 5: POST /api/push/register ───
 @app.route('/api/push/register', methods=['POST'])
@@ -304,12 +321,14 @@ def watering_list():
     } for r in rows]
     return jsonify(result), 200
 
+@app.route('/api/watering/<int:record_id>', methods=['DELETE'])
 @app.route('/api/watering', methods=['DELETE'])
-def watering_delete():
-    """删除浇水记录"""
-    record_id = request.args.get('id', type=int)
+def watering_delete(record_id=None):
+    """删除浇水记录（支持路径参数和查询参数两种格式）"""
+    if record_id is None:
+        record_id = request.args.get('id', type=int)
     if not record_id:
-        return jsonify({"status": "error", "message": "id query parameter required"}), 400
+        return jsonify({"status": "error", "message": "id required (path /api/watering/{id} or ?id=)"}), 400
     
     db = get_db()
     db.execute("DELETE FROM watering_records WHERE id=?", (record_id,))
