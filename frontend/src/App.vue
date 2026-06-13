@@ -1,7 +1,11 @@
 <template>
   <div class="app" :class="{ dark: isDark }">
+    <!-- Header -->
     <header class="app-header">
-      <h1>🌱 湿度监控</h1>
+      <div class="header-brand">
+        <FlowerFairy :moisture="stats?.latest_moisture ?? null" :size="38" />
+        <h1>花语湿度</h1>
+      </div>
       <div class="header-actions">
         <button class="icon-btn" @click="toggleDark" title="深色模式">
           {{ isDark ? '☀️' : '🌙' }}
@@ -16,34 +20,50 @@
     </header>
 
     <main class="app-body">
-      <!-- 当前湿度卡片 -->
-      <section class="card current-card" v-if="stats">
-        <div class="moisture-ring" :style="ringStyle">
-          <span class="moisture-value">{{ stats.latest_moisture ?? '--' }}</span>
-          <span class="moisture-unit">%</span>
+      <!-- Hero: Fairy + Moisture Ring -->
+      <section class="card hero-card" v-if="stats">
+        <div class="hero-scene">
+          <FlowerFairy :moisture="stats.latest_moisture ?? null" :size="120" />
+          <div class="moisture-ring" :style="ringStyle">
+            <span class="moisture-value">{{ stats.latest_moisture ?? '--' }}</span>
+            <span class="moisture-unit">%</span>
+          </div>
         </div>
-        <div class="meta-info">
-          <span>电压: {{ stats.latest_voltage ?? '--' }}V</span>
-          <span>ADC: {{ stats.latest_adc ?? '--' }}</span>
-          <span>{{ formatTime(stats.latest_time) }}</span>
+        <p class="fairy-says">{{ fairyMessage }}</p>
+        <div class="meta-row">
+          <span class="meta-item">⚡ {{ stats.latest_voltage ?? '--' }}V</span>
+          <span class="meta-item">📊 ADC {{ stats.latest_adc ?? '--' }}</span>
+          <span class="meta-item">🕐 {{ formatTime(stats.latest_time) }}</span>
         </div>
         <div class="refresh-badge" v-if="lastRefresh">
           更新于 {{ lastRefreshStr }}
         </div>
       </section>
 
-      <!-- 统计摘要 -->
+      <!-- Stats Grid -->
       <section class="card stats-card" v-if="stats">
-        <h2>📊 统计 ({{ stats.period_hours }}h)</h2>
+        <h2>🌿 数据概览</h2>
         <div class="stats-grid">
-          <div>平均: {{ stats.avg_moisture?.toFixed(1) }}%</div>
-          <div>最低: {{ stats.min_moisture?.toFixed(1) }}%</div>
-          <div>最高: {{ stats.max_moisture?.toFixed(1) }}%</div>
-          <div>读数: {{ stats.readings_count }}</div>
+          <div class="stat-cell">
+            <div class="stat-num">{{ stats.avg_moisture?.toFixed(1) }}</div>
+            <div class="stat-label">平均湿度%</div>
+          </div>
+          <div class="stat-cell">
+            <div class="stat-num low">{{ stats.min_moisture?.toFixed(1) }}</div>
+            <div class="stat-label">最低%</div>
+          </div>
+          <div class="stat-cell">
+            <div class="stat-num high">{{ stats.max_moisture?.toFixed(1) }}</div>
+            <div class="stat-label">最高%</div>
+          </div>
+          <div class="stat-cell">
+            <div class="stat-num">{{ stats.readings_count }}</div>
+            <div class="stat-label">读数次数</div>
+          </div>
         </div>
       </section>
 
-      <!-- 历史图表 -->
+      <!-- History Chart -->
       <section class="card history-card">
         <h2>📈 历史趋势</h2>
         <div class="range-selector">
@@ -69,7 +89,7 @@
         <div class="empty-msg" v-else>暂无历史数据</div>
       </section>
 
-      <!-- 浇水按钮 -->
+      <!-- Watering -->
       <section class="card action-card">
         <h2>💧 浇水记录</h2>
         <button class="water-btn" @click="recordWatering" :disabled="loading">
@@ -83,7 +103,7 @@
         </div>
       </section>
 
-      <!-- 告警配置 -->
+      <!-- Alert Config -->
       <section class="card alert-card" v-if="alertConfig">
         <h2>🔔 告警设置</h2>
         <div class="alert-form">
@@ -103,7 +123,7 @@
         </div>
       </section>
 
-      <!-- 告警历史 -->
+      <!-- Alert History -->
       <section class="card alerts-card" v-if="alerts.length">
         <h2>⚠️ 告警历史 <button class="clear-btn" @click="clearAlerts" title="清除已读">🗑️</button></h2>
         <div class="alert-item" v-for="a in alerts" :key="a.id">
@@ -113,18 +133,16 @@
         </div>
       </section>
 
-      <!-- 加载/错误状态 -->
       <div class="status-msg" v-if="errorMsg">
         ❌ {{ errorMsg }}
       </div>
     </main>
 
-    <!-- 离线提示 -->
     <div class="offline-bar" v-if="!isOnline">
       📡 网络断开 — 数据可能过时
     </div>
 
-    <!-- 服务器配置模态框 -->
+    <!-- Server Config Modal -->
     <div class="modal-overlay" v-if="showServerConfig" @click.self="showServerConfig = false">
       <div class="modal-card">
         <h2>⚙️ 服务器设置</h2>
@@ -143,6 +161,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { getStats, getWatering, getAlerts, getAlertConfig, getHistory, postWatering, deleteWatering as apiDeleteWatering, updateAlertConfig, initApiBaseUrl, updateApiBaseUrl } from './api'
 import { initCapacitorPlugins, getServerUrl, setServerUrl, getNetworkStatus } from './plugins/capacitor'
+import FlowerFairy from './components/FlowerFairy.vue'
 
 // ========== 状态 ==========
 const stats = ref(null)
@@ -167,11 +186,21 @@ const lastRefreshStr = computed(() => {
   return new Date(lastRefresh.value).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 })
 
+const fairyMessage = computed(() => {
+  const m = stats.value?.latest_moisture
+  if (m == null) return '等待数据...'
+  if (m >= 60) return '土壤很湿润，花朵们很开心~ 🌸'
+  if (m >= 40) return '湿度适中，我正在努力生长~ 🌿'
+  if (m >= 25) return '有点干了，渴渴的...给我水~ 🥀'
+  return '好干啊！快浇水救救小花！😭'
+})
+
 const ringStyle = computed(() => {
   const m = stats.value?.latest_moisture
-  if (m == null) return {}
+  if (m == null) return { borderColor: '#666' }
   let color = '#4CAF50'
-  if (m < 30) color = '#F44336'
+  if (m < 25) color = '#F44336'
+  else if (m < 40) color = '#FF5722'
   else if (m < 50) color = '#FF9800'
   return { borderColor: color }
 })
@@ -189,7 +218,7 @@ const chartPoints = computed(() => {
   for (let i = 0; i < historyData.value.length; i += step) {
     const d = historyData.value[i]
     const v = d.moisture ?? 0
-    const norm = (v - mn) / range * 80 + 10  // 10-90% height range
+    const norm = (v - mn) / range * 80 + 10
     let color = '#4CAF50'
     if (v < 30) color = '#F44336'
     else if (v < 50) color = '#FF9800'
@@ -330,13 +359,11 @@ function formatTimeShort(ts) {
 
 // ========== 生命周期 ==========
 onMounted(async () => {
-  // 深色模式恢复
   try {
     const saved = localStorage.getItem('darkMode')
     if (saved === 'true') isDark.value = true
   } catch {}
 
-  // Capacitor插件初始化 + API baseURL动态设置
   try {
     currentServerUrl.value = await getServerUrl()
     serverUrlInput.value = currentServerUrl.value
@@ -350,7 +377,6 @@ onMounted(async () => {
     console.warn('Capacitor plugins init skipped (web env):', e.message)
   }
 
-  // 设置API baseURL（关键！APK里不用vite proxy）
   try {
     await initApiBaseUrl()
   } catch (e) {
@@ -373,456 +399,447 @@ onUnmounted(() => {
 <style>
 :root {
   --green: #4CAF50;
+  --green-light: #81C784;
   --green-dark: #388E3C;
   --red: #F44336;
   --orange: #FF9800;
-  --bg: #f5f5f5;
-  --card-bg: #fff;
-  --text: #333;
-  --text2: #888;
-  --shadow: rgba(0,0,0,0.1);
+  --blue: #42A5F5;
+  --bg: #f8faf5;
+  --card-bg: rgba(255,255,255,0.92);
+  --card-border: rgba(76,175,80,0.08);
+  --text: #2d3436;
+  --text2: #7f8c8d;
+  --shadow: rgba(45,52,54,0.08);
+  --fairy-glow: rgba(129,199,132,0.4);
 }
-
 
 .dark {
   --green: #66BB6A;
-  --green-dark: #81C784;
   --green-light: #A5D6A7;
+  --green-dark: #81C784;
   --red: #EF5350;
-  --red-light: #FF8A80;
   --orange: #FFA726;
-  --orange-light: #FFCC80;
   --blue: #42A5F5;
-  --bg: #0f0f23;
-  --card-bg: rgba(22, 33, 62, 0.85);
-  --card-border: rgba(255,255,255,0.06);
-  --text: #f0f0f0;
-  --text2: #8e8ea0;
-  --shadow: rgba(0,0,0,0.4);
-  --glow-green: rgba(76,175,80,0.35);
-  --glow-red: rgba(244,67,54,0.35);
-  --glow-orange: rgba(255,167,38,0.35);
+  --bg: #0a1628;
+  --card-bg: rgba(16,28,56,0.88);
+  --card-border: rgba(129,199,132,0.1);
+  --text: #ecf0f1;
+  --text2: #8e9aaf;
+  --shadow: rgba(0,0,0,0.3);
+  --fairy-glow: rgba(129,199,132,0.25);
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
   background: var(--bg);
-  background-image: radial-gradient(ellipse at 20% 80%, rgba(76,175,80,0.06) 0%, transparent 60%),
-                    radial-gradient(ellipse at 80% 20%, rgba(66,165,245,0.04) 0%, transparent 60%);
   color: var(--text);
   -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
 }
 
 .app {
   max-width: 480px;
   margin: 0 auto;
-  padding: 16px;
+  padding: 12px 16px;
   min-height: 100vh;
+  background-image:
+    radial-gradient(ellipse at 30% 0%, rgba(129,199,132,0.08) 0%, transparent 50%),
+    radial-gradient(ellipse at 70% 100%, rgba(66,165,245,0.05) 0%, transparent 50%);
 }
 
-/* Header */
+/* ====== Header ====== */
 .app-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px 0 12px;
-  color: var(--green-light);
+  padding: 12px 0 8px;
 }
 
-.app-header h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: 0.5px; }
+.header-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
 
-.header-actions { display: flex; gap: 8px; }
+.header-brand h1 {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--green);
+  letter-spacing: 1px;
+}
+
+.header-actions { display: flex; gap: 6px; }
 
 .icon-btn {
-  background: rgba(255,255,255,0.06); border: none; font-size: 1.2rem;
-  cursor: pointer; padding: 6px 10px; border-radius: 10px;
-  color: var(--text); transition: all 0.2s;
+  background: rgba(129,199,132,0.08);
+  border: 1px solid rgba(129,199,132,0.12);
+  font-size: 1.1rem;
+  cursor: pointer;
+  padding: 5px 8px;
+  border-radius: 10px;
+  color: var(--text);
+  transition: all 0.2s;
 }
-
-.icon-btn:hover { background: rgba(255,255,255,0.12); transform: scale(1.05); }
-.icon-btn:active { transform: scale(0.95); }
+.icon-btn:hover { background: rgba(129,199,132,0.18); transform: scale(1.08); }
+.icon-btn:active { transform: scale(0.94); }
 .icon-btn:disabled { opacity: 0.4; }
 
-/* Cards */
+/* ====== Cards ====== */
 .card {
   background: var(--card-bg);
   border: 1px solid var(--card-border);
-  border-radius: 16px;
-  padding: 20px;
-  margin-bottom: 14px;
-  box-shadow: 0 4px 12px var(--shadow);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  transition: transform 0.2s, box-shadow 0.2s;
+  border-radius: 18px;
+  padding: 18px;
+  margin-bottom: 12px;
+  box-shadow: 0 4px 16px var(--shadow);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition: transform 0.25s, box-shadow 0.25s;
 }
-
-.card:hover { box-shadow: 0 6px 20px rgba(0,0,0,0.5); }
-
+.card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px var(--shadow); }
 .card h2 {
-  font-size: 1rem; margin-bottom: 14px; color: var(--text2);
-  font-weight: 600; letter-spacing: 0.3px;
+  font-size: 0.95rem;
+  margin-bottom: 14px;
+  color: var(--text2);
+  font-weight: 600;
+  letter-spacing: 0.5px;
 }
 
-/* 湿度环 */
-.current-card { text-align: center; padding: 24px 20px; }
+/* ====== Hero Card ====== */
+.hero-card { text-align: center; padding: 20px 16px 16px; }
 
+.hero-scene {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+}
+
+.fairy-says {
+  font-size: 0.9rem;
+  color: var(--green-light);
+  margin: 10px 0 6px;
+  font-weight: 500;
+  animation: fadeFloat 3s ease-in-out infinite;
+  min-height: 1.4em;
+}
+
+@keyframes fadeFloat {
+  0%, 100% { opacity: 0.85; transform: translateY(0); }
+  50% { opacity: 1; transform: translateY(-3px); }
+}
+
+/* Moisture Ring */
 .moisture-ring {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 140px;
-  height: 140px;
+  width: 120px;
+  height: 120px;
   border-radius: 50%;
-  border: 6px solid var(--green);
-  margin: 12px auto;
-  background: radial-gradient(circle, rgba(76,175,80,0.08) 0%, transparent 70%);
-  box-shadow: 0 0 20px var(--glow-green),
-              inset 0 0 20px rgba(76,175,80,0.05);
+  border: 5px solid var(--green);
+  margin: 4px auto;
+  background: radial-gradient(circle, rgba(129,199,132,0.06) 0%, transparent 70%);
+  box-shadow: 0 0 24px var(--fairy-glow);
   animation: ringPulse 3s ease-in-out infinite;
   transition: border-color 0.5s, box-shadow 0.5s;
 }
 
 @keyframes ringPulse {
-  0%, 100% { box-shadow: 0 0 20px var(--glow-green), inset 0 0 20px rgba(76,175,80,0.05); }
-  50% { box-shadow: 0 0 30px var(--glow-green), inset 0 0 25px rgba(76,175,80,0.08); }
+  0%, 100% { box-shadow: 0 0 24px var(--fairy-glow); }
+  50% { box-shadow: 0 0 36px var(--fairy-glow); }
 }
 
 .moisture-value {
-  font-size: 2.8rem;
+  font-size: 2.4rem;
   font-weight: 800;
   color: var(--green-light);
   line-height: 1;
 }
-
 .moisture-unit {
-  font-size: 1.1rem;
+  font-size: 0.8rem;
   color: var(--text2);
   margin-left: 2px;
-  font-weight: 500;
 }
 
-.meta-info {
+/* Meta row */
+.meta-row {
   display: flex;
-  gap: 16px;
   justify-content: center;
-  font-size: 0.85rem;
+  gap: 12px;
+  margin-top: 10px;
+  font-size: 0.78rem;
   color: var(--text2);
-  margin-top: 8px;
 }
-
-.meta-info span {
-  background: rgba(255,255,255,0.06);
-  padding: 4px 10px;
-  border-radius: 20px;
-  white-space: nowrap;
+.meta-item {
+  background: rgba(129,199,132,0.06);
+  padding: 3px 8px;
+  border-radius: 8px;
 }
 
 .refresh-badge {
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   color: var(--text2);
-  margin-top: 10px;
+  margin-top: 6px;
   opacity: 0.7;
 }
 
-/* 统计网格 */
+/* ====== Stats Grid ====== */
 .stats-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px;
-  font-size: 0.9rem;
 }
 
-.stats-grid > div {
-  background: rgba(255,255,255,0.05);
-  padding: 10px 12px;
-  border-radius: 10px;
+.stat-cell {
+  background: rgba(129,199,132,0.04);
+  border-radius: 12px;
+  padding: 12px 10px;
   text-align: center;
-  transition: background 0.2s;
 }
 
-.stats-grid > div:hover { background: rgba(255,255,255,0.08); }
+.stat-num {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--green-light);
+}
+.stat-num.low { color: var(--red); }
+.stat-num.high { color: var(--orange); }
+.stat-label {
+  font-size: 0.72rem;
+  color: var(--text2);
+  margin-top: 4px;
+}
 
-/* 历史图表 */
+/* ====== Chart ====== */
 .range-selector {
   display: flex;
   gap: 8px;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 }
-
 .range-selector button {
-  padding: 6px 14px;
-  border: 1px solid rgba(76,175,80,0.4);
-  border-radius: 8px;
+  padding: 5px 14px;
+  border: 1px solid var(--card-border);
   background: transparent;
-  color: var(--text);
+  color: var(--text2);
+  border-radius: 10px;
   cursor: pointer;
   font-size: 0.85rem;
   transition: all 0.2s;
 }
-
-.range-selector button:hover { background: rgba(76,175,80,0.15); }
-
 .range-selector button.active {
   background: var(--green);
-  color: white;
+  color: #fff;
   border-color: var(--green);
 }
 
 .chart-container {
   display: flex;
-  gap: 4px;
+  gap: 8px;
   height: 160px;
 }
-
 .chart-y-axis {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  font-size: 0.7rem;
+  font-size: 0.65rem;
   color: var(--text2);
   width: 30px;
   text-align: right;
 }
-
 .chart-bars {
   flex: 1;
   display: flex;
+  align-items: flex-end;
   gap: 2px;
-  align-items: stretch;
-  position: relative;
+  overflow-x: auto;
 }
-
 .chart-bar-group {
   flex: 1;
+  min-width: 6px;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  justify-content: flex-end;
   position: relative;
-  min-width: 0;
+  height: 100%;
 }
-
 .chart-bar {
-  width: 100%;
-  min-height: 3px;
-  border-radius: 4px 4px 0 0;
-  position: absolute;
-  transition: height 0.3s, opacity 0.2s;
+  border-radius: 3px 3px 0 0;
+  min-height: 4px;
+  transition: height 0.3s;
 }
-
-.chart-bar-group:hover .chart-bar { opacity: 0.85; filter: brightness(1.3); }
-
 .chart-label {
-  font-size: 0.65rem;
+  font-size: 0.55rem;
   color: var(--text2);
   position: absolute;
-  bottom: -14px;
+  bottom: -16px;
+  left: 50%;
+  transform: translateX(-50%);
   white-space: nowrap;
 }
-
 .empty-msg {
-  text-align: center;
   color: var(--text2);
   font-size: 0.85rem;
-  padding: 24px;
+  text-align: center;
+  padding: 20px 0;
 }
 
-/* 浇水 */
+/* ====== Watering ====== */
 .water-btn {
   width: 100%;
-  padding: 12px;
-  background: linear-gradient(135deg, var(--green), var(--green-dark));
-  color: white;
+  padding: 10px;
+  background: linear-gradient(135deg, var(--green) 0%, var(--green-dark) 100%);
+  color: #fff;
   border: none;
-  border-radius: 10px;
-  font-size: 1rem;
-  font-weight: 600;
+  border-radius: 12px;
+  font-size: 0.95rem;
   cursor: pointer;
-  margin-bottom: 10px;
   transition: all 0.2s;
-  box-shadow: 0 2px 8px rgba(76,175,80,0.3);
+  margin-bottom: 10px;
 }
-
-.water-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(76,175,80,0.4); }
+.water-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(76,175,80,0.3); }
 .water-btn:active { transform: translateY(0); }
-.water-btn:disabled { opacity: 0.5; transform: none; }
+.water-btn:disabled { opacity: 0.5; }
 
+.watering-list { max-height: 150px; overflow-y: auto; }
 .watering-item {
   display: flex;
   justify-content: space-between;
-  padding: 8px 0;
-  font-size: 0.85rem;
-  border-bottom: 1px solid rgba(255,255,255,0.04);
+  align-items: center;
+  padding: 6px 0;
+  font-size: 0.82rem;
+  color: var(--text2);
+  border-bottom: 1px solid rgba(129,199,132,0.06);
 }
-
-.watering-item:last-child { border-bottom: none; }
-
 .del-btn {
-  background: none;
-  border: none;
-  color: var(--red-light);
-  cursor: pointer;
-  font-size: 1rem;
-  transition: color 0.2s;
+  background: none; border: none; color: var(--red);
+  cursor: pointer; font-size: 0.85rem; opacity: 0.6;
+  transition: opacity 0.2s;
 }
+.del-btn:hover { opacity: 1; }
 
-.del-btn:hover { color: var(--red); }
-
-/* 告警 */
+/* ====== Alerts ====== */
 .alert-form {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
+  font-size: 0.85rem;
 }
-
 .alert-form label {
-  font-size: 0.9rem; display: flex; align-items: center; gap: 8px;
-  padding: 4px 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
-
 .alert-form input[type="number"] {
   width: 60px;
-  padding: 6px;
-  border: 1px solid rgba(255,255,255,0.1);
-  border-radius: 6px;
-  background: rgba(255,255,255,0.06);
+  padding: 4px;
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  background: rgba(129,199,132,0.04);
   color: var(--text);
+  font-size: 0.85rem;
 }
-
 .alert-form input[type="checkbox"] {
   accent-color: var(--green);
 }
-
 .save-btn {
-  padding: 10px;
-  background: linear-gradient(135deg, var(--green), var(--green-dark));
-  color: white;
+  padding: 8px 16px;
+  background: var(--green);
+  color: #fff;
   border: none;
-  border-radius: 8px;
+  border-radius: 10px;
   cursor: pointer;
-  font-weight: 600;
+  font-size: 0.85rem;
   transition: all 0.2s;
 }
-
-.save-btn:hover { box-shadow: 0 2px 8px rgba(76,175,80,0.3); }
-
-.alert-type { font-weight: bold; }
-.alert-type.low { color: var(--orange-light); }
-.alert-type.high { color: var(--red-light); }
+.save-btn:hover { background: var(--green-dark); }
+.save-btn:disabled { opacity: 0.5; }
 
 .alert-item {
-  padding: 6px 0;
-  font-size: 0.85rem;
-  display: flex;
-  gap: 10px;
-}
-
-.alerts-card h2 {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  padding: 6px 0;
+  font-size: 0.82rem;
+  color: var(--text2);
 }
+.alert-type {
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.alert-type.low { background: rgba(244,67,54,0.1); color: var(--red); }
+.alert-type.high { background: rgba(255,152,0,0.1); color: var(--orange); }
 
 .clear-btn {
-  background: none; border: none;
-  font-size: 0.9rem; cursor: pointer;
-  color: var(--text2);
-  transition: color 0.2s;
+  background: none; border: none; font-size: 0.85rem;
+  cursor: pointer; opacity: 0.6; transition: opacity 0.2s;
 }
-
-.clear-btn:hover { color: var(--red-light); }
+.clear-btn:hover { opacity: 1; }
 
 .status-msg {
-  padding: 10px;
-  background: rgba(244,67,54,0.12);
-  border: 1px solid rgba(244,67,54,0.2);
-  border-radius: 10px;
-  color: var(--red-light);
+  color: var(--red);
   font-size: 0.85rem;
   text-align: center;
+  padding: 10px;
 }
-
-.dark .status-msg { background: rgba(244,67,54,0.15); }
 
 .offline-bar {
   position: fixed;
   bottom: 0;
   left: 0;
   right: 0;
-  padding: 10px;
-  background: linear-gradient(135deg, #FF9800, #F57C00);
-  color: white;
+  background: rgba(244,67,54,0.9);
+  color: #fff;
   text-align: center;
+  padding: 8px;
   font-size: 0.85rem;
-  font-weight: 500;
-  z-index: 100;
 }
 
-/* 模态框 */
+/* ====== Modal ====== */
 .modal-overlay {
   position: fixed;
   top: 0; left: 0; right: 0; bottom: 0;
-  background: rgba(0,0,0,0.6);
+  background: rgba(0,0,0,0.5);
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 200;
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
+  z-index: 100;
 }
 .modal-card {
   background: var(--card-bg);
-  border: 1px solid var(--card-border);
-  border-radius: 20px;
-  padding: 28px;
+  border-radius: 18px;
+  padding: 24px;
   width: 90%;
   max-width: 360px;
-  box-shadow: 0 8px 32px var(--shadow);
   backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
 }
-.modal-card h2 { color: var(--text); margin-bottom: 14px; }
-.modal-hint { font-size: 0.8rem; color: var(--text2); margin-bottom: 14px; word-break: break-all; }
+.modal-card h2 { margin-bottom: 12px; }
+.modal-hint { font-size: 0.82rem; color: var(--text2); margin-bottom: 10px; }
 .modal-input {
   width: 100%;
-  padding: 12px 14px;
-  border: 1px solid rgba(255,255,255,0.1);
-  border-radius: 10px;
-  font-size: 0.9rem;
-  margin-bottom: 18px;
-  background: rgba(255,255,255,0.06);
+  padding: 10px;
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  background: rgba(129,199,132,0.04);
   color: var(--text);
+  font-size: 0.9rem;
+  margin-bottom: 12px;
 }
 .modal-actions { display: flex; gap: 8px; }
 .modal-btn {
-  flex: 1;
-  padding: 12px;
-  border-radius: 10px;
+  padding: 10px 20px;
   border: none;
+  border-radius: 10px;
   cursor: pointer;
-  font-size: 0.9rem;
-  font-weight: 600;
+  font-size: 0.85rem;
   transition: all 0.2s;
 }
-.modal-btn.save { background: linear-gradient(135deg, var(--green), var(--green-dark)); color: white; }
-.modal-btn.save:hover { box-shadow: 0 2px 8px rgba(76,175,80,0.3); }
-.modal-btn.cancel { background: rgba(255,255,255,0.08); color: var(--text); }
-.modal-btn.cancel:hover { background: rgba(255,255,255,0.12); }
-
-/* 响应式 */
-@media (max-width: 360px) {
-  .app { padding: 8px; }
-  .moisture-ring { width: 110px; height: 110px; border-width: 5px; }
-  .moisture-value { font-size: 2.2rem; }
-  .card { padding: 14px; border-radius: 12px; }
-  .chart-container { height: 120px; }
-  .chart-label { font-size: 0.55rem; }
-}
-
-@media (min-width: 768px) {
-  .app { max-width: 600px; }
-  .moisture-ring { width: 160px; height: 160px; }
-  .moisture-value { font-size: 3.2rem; }
-}
+.modal-btn.save { background: var(--green); color: #fff; }
+.modal-btn.save:hover { background: var(--green-dark); }
+.modal-btn.cancel { background: rgba(0,0,0,0.06); color: var(--text); }
 </style>
