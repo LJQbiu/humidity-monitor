@@ -343,6 +343,6 @@ def health():
 # ─── 启动 ───
 if __name__ == '__main__':
     init_db()
-    port = int(os.environ.get('HUMIDITY_PORT', 9876))
+    port = int(os.environ.get('HUMIDITY_PORT', 5000))
     print(f"🌱 Humidity Sensor Backend starting on 0.0.0.0:{port}")
     app.run(host='0.0.0.0', port=port, debug=True)
