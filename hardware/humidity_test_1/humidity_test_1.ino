@@ -1,8 +1,19 @@
 #include <ESP8266WiFi.h>
 #include <ESP8266HTTPClient.h>
+#include <ESP8266WebServer.h>
+#include <DNSServer.h>
+#include <EEPROM.h>
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
+
+// ========== 类型定义(必须在最前，避免Arduino预处理器原型生成问题) ==========
+enum FairyMood { MOOD_JOY, MOOD_HAPPY, MOOD_OK, MOOD_WORRY, MOOD_SAD };
+
+// ========== AP模式 ==========
+bool isAPMode = false;
+ESP8266WebServer apServer(80);
+DNSServer dnsServer;
 
 // ========== OLED 配置 ==========
 #define SCREEN_WIDTH 128
@@ -11,9 +22,49 @@
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 // ========== WiFi 配置 ==========
-const char* ssid = "LJQ";
-const char* password = "12345678";
+String ssid = "LJQ";
+String password = "12345678";
 const char* serverUrl = "http://101.37.19.59:5000/api/data";
+
+// ========== EEPROM 持久化 ==========
+#define EEPROM_SIZE 128
+#define SSID_ADDR 0
+#define PASS_ADDR 64
+#define MAGIC_ADDR 126
+#define MAGIC_VAL 0xA5
+
+void loadWiFiFromEEPROM() {
+  EEPROM.begin(EEPROM_SIZE);
+  if (EEPROM.read(MAGIC_ADDR) == MAGIC_VAL) {
+    char buf[64];
+    for (int i = 0; i < 63; i++) buf[i] = EEPROM.read(SSID_ADDR + i);
+    buf[63] = 0;
+    String savedSsid = String(buf);
+    for (int i = 0; i < 63; i++) buf[i] = EEPROM.read(PASS_ADDR + i);
+    buf[63] = 0;
+    String savedPass = String(buf);
+    if (savedSsid.length() > 0) {
+      ssid = savedSsid;
+      password = savedPass;
+      Serial.println("EEPROM: loaded SSID=" + ssid);
+    }
+  } else {
+    Serial.println("EEPROM: no saved config, using defaults");
+  }
+  EEPROM.end();
+}
+
+void saveWiFiToEEPROM(String newSsid, String newPass) {
+  EEPROM.begin(EEPROM_SIZE);
+  for (int i = 0; i < 63; i++) {
+    EEPROM.write(SSID_ADDR + i, i < newSsid.length() ? newSsid[i] : 0);
+    EEPROM.write(PASS_ADDR + i, i < newPass.length() ? newPass[i] : 0);
+  }
+  EEPROM.write(MAGIC_ADDR, MAGIC_VAL);
+  EEPROM.commit();
+  EEPROM.end();
+  Serial.println("EEPROM: saved SSID=" + newSsid);
+}
 
 // ========== 传感器 ==========
 int adc_raw = 0;
@@ -59,8 +110,6 @@ unsigned long footTimer = 0;
 #define FOOT_SPEED 400
 
 // ========== 5级心情! ==========
-enum FairyMood { MOOD_JOY, MOOD_HAPPY, MOOD_OK, MOOD_WORRY, MOOD_SAD };
-
 FairyMood getMood() {
   if (moisture >= 80) return MOOD_JOY;
   if (moisture >= 60) return MOOD_HAPPY;
@@ -74,7 +123,7 @@ FairyMood getMood() {
 #define HEAD_Y 10
 #define HEAD_R 8
 
-void drawCuteFairy(FairyMood mood, bool blink, bool bigB, int wingP, int breathP, int tilt, int armAct, int footP) {
+void drawCuteFairy(FairyMood mood, bool isBlink, bool bigB, int wingP, int breathP, int tilt, int armAct, int footP) {
   // 翅膀偏移(8帧平滑)
   int wingOff = 0;
   if (wingP <= 3) wingOff = -3 + wingP;
@@ -184,7 +233,7 @@ void drawCuteFairy(FairyMood mood, bool blink, bool bigB, int wingP, int breathP
   if (bigB) {
     display.drawLine(eyeL-3, eyeY, eyeL+3, eyeY, SSD1306_BLACK);
     display.drawLine(eyeR-3, eyeY, eyeR+3, eyeY, SSD1306_BLACK);
-  } else if (blink) {
+  } else if (isBlink) {
     display.drawLine(eyeL-2, eyeY, eyeL+2, eyeY, SSD1306_BLACK);
     display.drawLine(eyeR-2, eyeY, eyeR+2, eyeY, SSD1306_BLACK);
   } else {
@@ -410,7 +459,98 @@ void uploadData() {
   int httpCode = http.POST(payload);
   hasUpload = true;
   uploadOk = (httpCode == 200);
+  Serial.println("Upload: " + String(uploadOk ? "OK" : "FAIL") + " code=" + String(httpCode) + " data=" + payload);
   http.end();
+}
+
+// ========== AP模式 Web服务器 ==========
+
+void handleApScan() {
+  int n = WiFi.scanNetworks();
+  String json = "[";
+  for (int i = 0; i < n; i++) {
+    if (i > 0) json += ",";
+    json += "{\"ssid\":\"" + WiFi.SSID(i) + "\",\"rssi\":\"" + String(WiFi.RSSI(i)) + "\",\"enc\":" + String(WiFi.encryptionType(i) != ENC_TYPE_NONE) + "}";
+  }
+  json += "]";
+  apServer.send(200, "application/json", json);
+}
+
+void handleApRoot() {
+  String html = "<!DOCTYPE html><html><head>"
+    "<meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
+    "<title>Soil Sensor</title>"
+    "<style>body{font-family:sans-serif;background:#1a1a2e;color:#e0e0e0;padding:20px}"
+    ".card{background:#16213e;border-radius:12px;padding:20px;margin:10px 0}"
+    "h1{color:#0f3460;margin:0}h2{color:#e94560}"
+    ".val{font-size:2em;color:#00ff88;font-weight:bold}"
+    ".bar{height:24px;background:#333;border-radius:12px;margin:8px 0}"
+    ".fill{height:24px;border-radius:12px;background:linear-gradient(90deg,#e94560,#00ff88)}"
+    "input{width:100%;padding:10px;margin:6px 0;border:1px solid #0f3460;border-radius:8px;background:#1a1a2e;color:#e0e0e0;box-sizing:border-box}"
+    "button{width:100%;padding:12px;background:#e94560;color:#fff;border:none;border-radius:8px;font-size:1.1em;cursor:pointer}"
+    ".wifi-item{padding:10px;border-bottom:1px solid #0f3460;cursor:pointer;display:flex;justify-content:space-between}"
+    ".wifi-item:hover{background:#0f3460}"
+    ".signal{color:#00ff88;font-size:0.9em}"
+    ".lock{color:#e94560}"
+    "#wifiList{margin:8px 0;border-radius:8px;background:#0d1b2a;overflow:hidden}"
+    "#scanBtn{background:#0f3460;margin-bottom:8px}"
+    ".spinner{display:inline-block;width:16px;height:16px;border:2px solid #0f3460;border-top:2px solid #e94560;border-radius:50%;animation:spin 1s linear infinite}"
+    "@keyframes spin{to{transform:rotate(360deg)}}"
+    "</style></head><body>"
+    "<div class='card'><h1>🌱 Soil Sensor</h1></div>"
+    "<div class='card'><h2>实时数据</h2>"
+    "<div class='val'>" + String((int)moisture) + "%</div>"
+    "<div class='bar'><div class='fill' style='width:" + String((int)moisture) + "%'></div></div>"
+    "<p>电压: " + String(voltage, 2) + "V | ADC: " + String(adc_raw) + "</p></div>"
+    "<div class='card'><h2>配置WiFi</h2>"
+    "<button id='scanBtn' onclick='scanWifi()'>扫描附近WiFi</button>"
+    "<div id='wifiList'></div>"
+    "<form action='/connect' method='POST' id='connForm'>"
+    "<input name='ssid' id='ssidInput' placeholder='WiFi名称（点击上方列表选择）' value='" + String(ssid) + "'>"
+    "<input name='pass' id='passInput' placeholder='WiFi密码' type='password'>"
+    "<button type='submit'>连接WiFi并重启</button></form></div>"
+    "<script>"
+    "function scanWifi(){"
+    "var btn=document.getElementById('scanBtn');"
+    "btn.innerHTML='<span class=\"spinner\"></span> 扫描中...';btn.disabled=true;"
+    "fetch('/scan').then(r=>r.json()).then(list=>{"
+    "btn.innerHTML='重新扫描';btn.disabled=false;"
+    "var html='';"
+    "list.sort((a,b)=>b.rssi-a.rssi);"
+    "list.forEach(w=>{"
+    "var sig=w.rssi;var bars=sig>-50?'4':sig>-60?'3':sig>-70?'2':'1';"
+    "html+='<div class=\"wifi-item\" onclick=\"pickWifi(\\''+w.ssid.replace(/'/g,\"\\\\'\")+'\\',\\''+w.enc+'\\')\">'"
+    "+'<span>'+w.ssid+'</span><span class=\"signal\">📶'+bars+(w.enc?'<span class=\"lock\">🔒</span>':'')+'</span></div>';"
+    "});"
+    "if(!html)html='<div style=\"padding:10px;color:#888\">未发现WiFi网络</div>';"
+    "document.getElementById('wifiList').innerHTML=html;"
+    "}).catch(e=>{btn.innerHTML='扫描失败,重试';btn.disabled=false;});}"
+    "function pickWifi(ssid,enc){"
+    "document.getElementById('ssidInput').value=ssid;"
+    "if(enc=='0')document.getElementById('passInput').placeholder='开放网络,无需密码';"
+    "else document.getElementById('passInput').placeholder='请输入WiFi密码';"
+    "}"
+    "scanWifi();"
+    "</script></body></html>";
+  apServer.send(200, "text/html", html);
+}
+
+void handleApConnect() {
+  String newSsid = apServer.arg("ssid");
+  String newPass = apServer.arg("pass");
+  if (newSsid.length() == 0) {
+    apServer.send(400, "text/plain", "SSID不能为空");
+    return;
+  }
+  saveWiFiToEEPROM(newSsid, newPass);
+  ssid = newSsid;
+  password = newPass;
+  apServer.send(200, "text/html",
+    "<html><body><h2>正在连接 " + newSsid + "...</h2>"
+    "<p>设备将重启尝试连接新WiFi。如果失败会再次进入AP模式。</p>"
+    "<script>setTimeout(()=>location.reload(),10000)</script></body></html>");
+  delay(1000);
+  ESP.restart();
 }
 
 // ========== 主显示界面(250ms刷新!) ==========
@@ -503,8 +643,16 @@ void showData() {
   if (WiFi.status() == WL_CONNECTED) {
     display.setCursor(2, 40);
     display.print("WiFi");
+    if (hasUpload && uploadOk) display.print(" OK");
+    else if (hasUpload) display.print(" FAIL");
+    else display.print(" --");
     display.setCursor(2, 52);
     display.print(WiFi.localIP());
+  } else if (isAPMode) {
+    display.setCursor(2, 40);
+    display.print("AP:SoilSensor");
+    display.setCursor(2, 52);
+    display.print("192.168.4.1");
   } else {
     display.setCursor(2, 40);
     display.print("WiFi OFF");
@@ -532,21 +680,34 @@ void setup() {
   display.setTextColor(SSD1306_WHITE);
   showBootScreen();
 
-  WiFi.begin(ssid, password);
+  loadWiFiFromEEPROM();
+  Serial.println("Connecting to: " + ssid);
+  WiFi.begin(ssid.c_str(), password.c_str());
   int attempts = 0;
-  while (WiFi.status() != WL_CONNECTED && attempts < 20) {
+  while (WiFi.status() != WL_CONNECTED && attempts < 30) {
     showWiFiConnecting(attempts);
-    Serial.print(".");
+    Serial.println("WiFi retry: " + String(attempts));
+    delay(500);
     attempts++;
   }
 
   if (WiFi.status() == WL_CONNECTED) {
     Serial.println("\nWiFi OK! IP: " + WiFi.localIP().toString());
     showWiFiConnected();
+    isAPMode = false;
   } else {
-    Serial.println("WiFi FAILED");
-    showWiFiFailed();
+    Serial.println("WiFi FAILED -> AP Mode");
+    isAPMode = true;
+    WiFi.mode(WIFI_AP);
     WiFi.softAP("SoilSensor", "12345678");
+    dnsServer.start(53, "*", WiFi.softAPIP());
+    showWiFiFailed();
+    apServer.on("/", handleApRoot);
+    apServer.on("/scan", handleApScan);
+    apServer.on("/connect", HTTP_POST, handleApConnect);
+    apServer.onNotFound(handleApRoot);
+    apServer.begin();
+    Serial.println("AP WebServer started at 192.168.4.1");
   }
 
   // 初始化动画计时器
@@ -580,5 +741,11 @@ void loop() {
   if (now - lastUploadTime >= UPLOAD_INTERVAL) {
     uploadData();
     lastUploadTime = now;
+  }
+
+  // AP模式Web服务 + DNS重定向
+  if (isAPMode) {
+    dnsServer.processNextRequest();
+    apServer.handleClient();
   }
 }
